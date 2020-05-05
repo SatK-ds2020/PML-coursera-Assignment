@@ -1,0 +1,131 @@
+---
+title: "Building Best Prediction Model Using Practical Machine learning: Coursera Project"
+author: "Satindra Kathania"
+date: "5/4/2020"
+output: html_document
+---
+
+# Overview
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. We will try to predict the manner in which they did the exercise by building best prediction model using cross validation and calculating the sample error.  
+
+# Data Information
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+# Data loading and attaching libraries
+```{r,echo=TRUE,results='hide'}
+library(caret);library(rpart.plot);library(randomForest);library(gbm)
+trainURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training_data<-read.csv(url(trainURL))
+test_data<-read.csv(url(testURL))
+dim(training_data)
+dim(test_data)
+```
+# Data Cleaning and Exploration
+```{r, echo=TRUE}
+# 1. Remove variables having more than 95% NA values 
+na_col<-sapply(training_data,function(x)mean(is.na(x)))>0.95
+training_data<-training_data[,na_col==FALSE]
+test_data<-test_data[,na_col==FALSE]
+
+# 2.Remove variables having nearly zero variance
+trainNZV<-nearZeroVar(training_data)
+training_data<-training_data[,-trainNZV]
+testNZV<-nearZeroVar(test_data)
+test_data<-test_data[,-testNZV]
+
+# 3. Remove variables that are not required in our analysis
+training_data<-training_data[,-c(1:7)]
+test_data<-test_data[,-c(1:7)]
+dim(training_data)
+dim(test_data)
+```
+# Data partitioning 
+```{r,echo=TRUE}
+inTrain<-createDataPartition(training_data$classe,p=0.6,list=FALSE)
+Training<-training_data[inTrain,]
+Testing<-training_data[-inTrain,]
+dim(Training)
+dim(Testing)
+```
+# Model Building
+# 1.Decision Tree Model
+```{r,echo=TRUE}
+set.seed(352020)
+ModFit<-train(classe ~.,data=Training,method="rpart")
+rpart.plot(ModFit$finalModel,roundint = FALSE)
+PredFit<-predict(ModFit,Testing) # predicting on testset
+CM<-confusionMatrix(PredFit,Testing$classe)
+CM$overall["Accuracy"]
+# plot(CM$table,main="Decision Tree Prediction Accuracy= 69.7%")
+```
+
+We see that the accuracy rate of this model is low: 49% and therefore the out-of-sample-error is about 51% which is quite large and not accepted.
+# 2.Random Forest Model
+```{r}
+set.seed(352020)
+RFModFit <-train(classe ~.,data=Training, method="rf",ntree=100)
+RFPredFit<-predict(RFModFit,Testing)
+RFCM<-confusionMatrix(RFPredFit,Testing$classe)
+RFCM
+plot(RFCM$table,main="Random Forest Prediction Accuracy= 99.15%")
+```
+
+As we can see that the accuracy rate of Random Forest Model is very high:99%,and the calculated sample error is as low as 1%, this might be the best model in this case.
+# 3.Gradient Boosting Model
+```{r}
+set.seed(352020)
+GBMModFit <-train(classe ~.,data=Training, method="gbm",verbose=FALSE)
+GBMPredFit<-predict(GBMModFit,Testing)
+GBMCM<-confusionMatrix(GBMPredFit,Testing$classe)
+GBMCM
+plot(GBMCM$table,main=" Gradient Boosting Prediction Accuracy= 95.99%")
+```
+
+From this model, we get the accuarcy rate of 96%, with sample error of 4%, which is lower than the above random forest model.
+# Random Forest Model with repeated cross-validation
+```{r}
+RFcontrol<-trainControl(method="repeatedcv",number=5,repeats = 3)
+set.seed(352020)
+RFcustomFit <-train(classe ~.,data=Training, method="rf",trControl=RFcontrol,ntree=100)
+RFPredcustom<-predict(RFcustomFit,Testing)
+RFcustomCM<-confusionMatrix(RFPredcustom,Testing$classe)
+RFcustomCM$overall["Accuracy"]
+trellis.par.set(caretTheme())
+plot(RFcustomFit, metric = "Accuracy",main="RFM:Accuracy=99.11%")
+```
+
+# GBM with repeated cross-validation
+```{r}
+gbmcontrol<-trainControl(method="repeatedcv",number=5,repeats = 3)
+set.seed(352020)
+GBMcustomFit <-train(classe ~.,data=Training, method="gbm",trControl=gbmcontrol,verbose=FALSE)
+GBMPredcustom<-predict(GBMcustomFit,Testing)
+GBMcustomCM<-confusionMatrix(GBMPredcustom,Testing$classe)
+GBMcustomCM$overall["Accuracy"]
+plot(GBMcustomFit,metric = "Accuracy",main="GBM:Accuracy=96.24%")
+```
+
+# Linear Discriminant Analysis
+```{r}
+ldacontrol<-trainControl(method="repeatedcv",number=5,repeats = 3)
+set.seed(352020)
+ldaMod <- train(classe ~ ., data=Training, method = "lda",trControl=ldacontrol)
+ldapredict<-predict(ldaMod,Testing)
+ldaCM<-confusionMatrix(ldapredict,Testing$classe)
+ldaCM$overall["Accuracy"]
+# plot(ldaCM$table,main=" Linear Discriminant Analysis Accuracy= 69.36%")
+```
+
+This model shows only 69.36% accuracy with sample error of 31%, which is not good enough for best model consideration.
+
+# Conclusion
+From all the above models and thier statistics with Bootstraping and cross-validation, in terms of accuracy and with lowest sample error, Random Forest model is best fitted model of choice.Therefore we next, apply this model to predict our test_data. 
+```{r}
+result<-predict(RFModFit,newdata=test_data)
+result
+```
